@@ -1,0 +1,132 @@
+version: '3.8'
+services:
+    jms:
+      image: vromero/activemq-artemis:2.16-alpine-latest
+      ports:
+        - 8161:8161
+        - 61616:61616
+    zipkin:
+      image: openzipkin/zipkin
+      ports:
+        - 9411:9411
+    eureka:
+      image: sfgbeerworks/mssc-brewery-eureka
+      ports:
+        - 8761:8761
+    config:
+      image: sfgbeerworks/mssc-config-server
+      ports:
+        - 8888:8888
+      depends_on:
+        - eureka
+      # Con Spring Boot, las variables de entorno sobrescriben las propiedades de los archivos de configuración que se encuentran en el classpath de la aplicación(carpeta "resources") y no han sido obtenidas desde los repositorios a través de Spring Cloud Config
+      # Nota: Los nombres de las variables de entorno tienen que seguir la nomenclatura de las propiedades de Spring Boot, sustituyendo el caracter '_' por el '.', para que se sobrescriban correctamente.Si el nombre de la propiedad tiene caracteres '-', se pueden dejar o se pueden eliminar y juntar el resto del texto
+      environment:
+        EUREKA_CLIENT_SERVICE-URL_DEFAULTZONE: http://netflix:eureka@eureka:8761/eureka/
+        # Use ip address of container to register to Eureka. Actualmente no hace falta porque el Gateway realiza correctamente las redirecciones a través de Eureka
+        #EUREKA_INSTANCE_PREFER_IP_ADDRESS: 'true' # Docker Compose no acepta datos booleanos. Hay que ponerlos como una cadena de texto o String
+    inventory-service:
+      image: sfgbeerworks/mssc-beer-inventory-service
+      ports:
+        - 8082:8082
+      depends_on:
+        - eureka
+        - config
+        - zipkin
+        - jms
+      # Con Spring Boot, las variables de entorno sobrescriben las propiedades de los archivos de configuración que se encuentran en el classpath de la aplicación(carpeta "resources") y no han sido obtenidas desde los repositorios a través de Spring Cloud Config
+      # Nota: Los nombres de las variables de entorno tienen que seguir la nomenclatura de las propiedades de Spring Boot, sustituyendo el caracter '_' por el '.', para que se sobrescriban correctamente.Si el nombre de la propiedad tiene caracteres '-', se pueden dejar o se pueden eliminar y juntar el resto del texto
+      environment:
+        EUREKA_CLIENT_SERVICE-URL_DEFAULTZONE: http://netflix:eureka@eureka:8761/eureka/
+        # Use ip address of container to register to Eureka. Actualmente no hace falta porque el Gateway realiza correctamente las redirecciones a través de Eureka
+        #EUREKA_INSTANCE_PREFER_IP_ADDRESS: 'true' # Docker Compose no acepta datos booleanos. Hay que ponerlos como una cadena de texto o String
+        SPRING_PROFILES_ACTIVE: localmysql,local-discovery
+        SPRING_ZIPKIN_BASEURL: http://zipkin:9411
+        SPRING_ARTEMIS_HOST: jms
+        SPRING_CLOUD_CONFIG_URI: http://MyUserName:MySecretPassword@config:8888
+        # El DNS "host.docker.internal" es un DNS especial de Docker y sirve para referirnos a nuestra máquina local(localhost)
+        SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3306/beerinventoryservice?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC
+      # Esta política de reinicio reinica automáticamente el servicio en el contenedor cuando se detecta algún fallo
+      restart: on-failure
+    inventory-failover:
+      image: sfgbeerworks/mssc-inventory-failover
+      ports:
+        - 8083:8083
+      depends_on:
+        - eureka
+        - zipkin
+      # Con Spring Boot, las variables de entorno sobrescriben las propiedades de los archivos de configuración que se encuentran en el classpath de la aplicación(carpeta "resources") y no han sido obtenidas desde los repositorios a través de Spring Cloud Config
+      # Nota: Los nombres de las variables de entorno tienen que seguir la nomenclatura de las propiedades de Spring Boot, sustituyendo el caracter '_' por el '.', para que se sobrescriban correctamente.Si el nombre de la propiedad tiene caracteres '-', se pueden dejar o se pueden eliminar y juntar el resto del texto
+      environment:
+        EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://netflix:eureka@eureka:8761/eureka/
+        # Use ip address of container to register to Eureka. Actualmente no hace falta porque el Gateway realiza correctamente las redirecciones a través de Eureka
+        #EUREKA_INSTANCE_PREFER_IP_ADDRESS: 'true' # Docker Compose no acepta datos booleanos. Hay que ponerlos como una cadena de texto o String
+        SPRING_PROFILES_ACTIVE: local-discovery
+        SPRING_ZIPKIN_BASEURL: http://zipkin:9411
+    beer-service:
+      image: sfgbeerworks/mssc-beer-service
+      ports:
+        - 8080:8080
+      depends_on:
+        - eureka
+        - config
+        - zipkin
+        - jms
+        - inventory-service
+        - inventory-failover
+      # Con Spring Boot, las variables de entorno sobrescriben las propiedades de los archivos de configuración que se encuentran en el classpath de la aplicación(carpeta "resources") y no han sido obtenidas desde los repositorios a través de Spring Cloud Config
+      # Nota: Los nombres de las variables de entorno tienen que seguir la nomenclatura de las propiedades de Spring Boot, sustituyendo el caracter '_' por el '.', para que se sobrescriban correctamente.Si el nombre de la propiedad tiene caracteres '-', se pueden dejar o se pueden eliminar y juntar el resto del texto
+      environment:
+        EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://netflix:eureka@eureka:8761/eureka
+        # Use ip address of container to register to Eureka. Actualmente no hace falta porque el Gateway realiza correctamente las redirecciones a través de Eureka
+        #EUREKA_INSTANCE_PREFER_IP_ADDRESS: 'true' # Docker Compose no acepta datos booleanos. Hay que ponerlos como una cadena de texto o String
+        SPRING_PROFILES_ACTIVE: localmysql,local-discovery
+        SPRING_ZIPKIN_BASEURL: http://zipkin:9411
+        SPRING_ARTEMIS_HOST: jms
+        # El DNS "host.docker.internal" es un DNS especial de Docker y sirve para referirnos a nuestra máquina local(localhost)
+        SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3306/beerservice?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC
+      # Esta política de reinicio reinica automáticamente el servicio en el contenedor cuando se detecta algún fallo
+      restart: on-failure
+    beer-order-service:
+      image: sfgbeerworks/mssc-beer-order-service
+      ports:
+        - 8081:8081
+      depends_on:
+        - eureka
+        - config
+        - zipkin
+        - jms
+        - beer-service
+      # Con Spring Boot, las variables de entorno sobrescriben las propiedades de los archivos de configuración que se encuentran en el classpath de la aplicación(carpeta "resources") y no han sido obtenidas desde los repositorios a través de Spring Cloud Config
+      # Nota: Los nombres de las variables de entorno tienen que seguir la nomenclatura de las propiedades de Spring Boot, sustituyendo el caracter '_' por el '.', para que se sobrescriban correctamente.Si el nombre de la propiedad tiene caracteres '-', se pueden dejar o se pueden eliminar y juntar el resto del texto
+      environment:
+        EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://netflix:eureka@eureka:8761/eureka/
+        # Use ip address of container to register to Eureka. Actualmente no hace falta porque el Gateway realiza correctamente las redirecciones a través de Eureka
+        #EUREKA_INSTANCE_PREFER_IP_ADDRESS: 'true' # Docker Compose no acepta datos booleanos. Hay que ponerlos como una cadena de texto o String
+        SPRING_PROFILES_ACTIVE: localmysql,local-discovery
+        SPRING_ZIPKIN_BASEURL: http://zipkin:9411
+        SPRING_ARTEMIS_HOST: jms
+        SFG_BREWERY_BEER-SERVICE-HOST: http://beer-service:8080
+        # El DNS "host.docker.internal" es un DNS especial de Docker y sirve para referirnos a nuestra máquina local(localhost)
+        SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3306/beerorderservice?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC
+      # Esta política de reinicio reinica automáticamente el servicio en el contenedor cuando se detecta algún fallo
+      restart: on-failure
+    gateway:
+      image: sfgbeerworks/mssc-brewery-gateway
+      ports:
+        - 9090:9090
+      depends_on:
+        - eureka
+        - zipkin
+        - inventory-service
+        - inventory-failover
+        - beer-service
+        - beer-order-service
+      # Con Spring Boot, las variables de entorno sobrescriben las propiedades de los archivos de configuración que se encuentran en el classpath de la aplicación(carpeta "resources") y no han sido obtenidas desde los repositorios a través de Spring Cloud Config
+      # Nota: Los nombres de las variables de entorno tienen que seguir la nomenclatura de las propiedades de Spring Boot, sustituyendo el caracter '_' por el '.', para que se sobrescriban correctamente.Si el nombre de la propiedad tiene caracteres '-', se pueden dejar o se pueden eliminar y juntar el resto del texto
+      environment:
+        EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://netflix:eureka@eureka:8761/eureka/
+        SPRING_PROFILES_ACTIVE: local-discovery
+        SPRING_ZIPKIN_BASEURL: http://zipkin:9411
+      # Esta política de reinicio reinica automáticamente el servicio en el contenedor cuando se detecta algún fallo
+      restart: on-failure

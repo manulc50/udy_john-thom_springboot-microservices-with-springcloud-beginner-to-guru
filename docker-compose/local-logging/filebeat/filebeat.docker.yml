@@ -1,0 +1,29 @@
+filebeat.autodiscover:
+    # Indicamos que el proveedor de Filebeat es Docker 
+    providers:
+        - type: docker
+          templates:
+              - condition:
+                    contains: 
+                        # Creamos el label "collect_logs_with_filebeat" para que Filebeat recopile o capture los logs de aquellos contenedores que tengan este label puesto a "true"
+                        container.labels.collect_logs_with_filebeat: "true"
+                # Indicamos que va a ser un contenedor de Docker
+                config:
+                    - type: container
+                      format: docker
+                      # Ruta donde va a buscar en el sistema de archivos los datos de logging para capturarlos
+                      paths:
+                          - "/var/lib/docker/containers/${data.docker.container.id}/*.log"
+                      processors:
+                          # Como nuestros datos de logging están en formato Json, aquí indicamos que se decodifique los campos de ese formato para almacenar los datos en Elasticsearch
+                          - decode_json_fields:
+                                when.equals:
+                                    docker.container.labels.decode_log_event_to_json_object: "true"
+                                fields: ["message"]
+                                target: ""
+                                overwrite_keys: true
+# Aquí indicamos a dónde tiene que dirigirse los datos de la salida de Filebeat y decimos que vayan directamente al host y al puerto donde está ejecutándose ElasticSearch
+output.elasticsearch:
+    hosts: ["elasticsearch:9200"]
+
+logging.metrics.enabled: false

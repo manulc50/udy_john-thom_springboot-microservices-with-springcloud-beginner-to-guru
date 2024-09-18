@@ -1,0 +1,19 @@
+|===
+|Path|Type|Description|Constraints
+
+|beerName
+|String
+|Name of the beer
+|Must not be blank
+
+|beerStyle
+|String
+|Style of Beer
+|Must not be blank
+
+|upc
+|Number
+|Beer UPC
+|Must be positive
+
+|===
